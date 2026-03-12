@@ -1,0 +1,70 @@
+program: main.py
+method: bayes
+
+metric:
+  name: mse
+  goal: minimize
+
+command:
+  - ${env}
+  - python
+  - ${program}
+
+  # ====== 필수(required=True) 인자들 ======
+  - --task_name
+  - long_term_forecast
+  - --is_training
+  - "1"
+  - --model_id
+  - sweep_fredformer
+  - --model
+  - Fredformer
+  - --data
+  - ETTh1
+  - --pred_len
+  - 336
+
+  # ====== sweep 파라미터를 한 번에 전달 ======
+  - ${args}
+
+parameters:
+  learning_rate:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 3e-3
+
+  batch_size:
+    values: [128, 256, 512]
+
+  train_epochs:
+    values: [50, 100]
+
+  patience:
+    values: [5, 10, 15]
+
+  # Fredformer
+  cf_dim:
+    values: [64, 128, 256]
+  cf_depth:
+    values: [1, 2, 3, 4]
+  cf_heads:
+    values: [4, 8]
+  cf_drop:
+    values: [0.0, 0.1, 0.2, 0.3]
+  mlp_drop:
+    values: [0.0, 0.1, 0.2, 0.3]
+  cf_mlp:
+    values: [64, 96, 128, 192]
+  cf_head_dim:
+    values: [16, 32, 64]
+  cf_weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
+
+  dropout:
+    values: [0.0, 0.1, 0.2]
+  grad_clip:
+    values: [1.0, 2.0, 4.0]
+
+run_cap: 50

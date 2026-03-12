@@ -48,7 +48,6 @@ data_dict = {
     'SRU': Dataset_SRU,
 }
 
-
 def data_provider(args, flag):
     Data = data_dict[args.data]
     timeenc = 0 if args.embed != 'timeF' else 1
