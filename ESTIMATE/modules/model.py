@@ -179,7 +179,7 @@ class Estimate(nn.Module):
     def backtesting(self, config, train_dataset, device):
         #%%
         X_backtest, y_backtest = train_dataset.gen_backtest_data(
-            config, config['start_backtest'], config['end_backtest_final'])
+            config, config['start_backtest'], config['end_backtest'])
         X_backtest = torch.tensor(X_backtest, dtype=torch.float32)
         X_backtest = X_backtest.to(device)
         y_preds = np.zeros(
@@ -196,9 +196,9 @@ class Estimate(nn.Module):
                 ed = i + config['batch_size']
                 
                 input = X_backtest[st:ed].to(device)
-                y_pred = self(input)
+                y_pred = self(input)[:,:,-1]
                 y_pred = y_pred.cpu().detach().numpy()
-                y_preds[st:ed] = y_pred.reshape(1, -1)
+                y_preds[st:ed] = y_pred
 
             y_preds = pd.DataFrame(
                 y_preds, 

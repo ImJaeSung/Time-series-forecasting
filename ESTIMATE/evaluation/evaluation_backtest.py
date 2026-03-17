@@ -59,14 +59,14 @@ def evaluate(y_trues, y_preds):
         bt_long += real_ret_rat_top_k
         sharpe_li.append(real_ret_rat_top_k)
         cumulative_returns.append(bt_long)
-
+    #%%
     """Total return"""
     Return = bt_long - 1
-
+    #%%
     """Sharpe ratio"""
     SR = np.array(sharpe_li)
     SR = (np.mean(sharpe_li) / np.std(sharpe_li)) * 15.87 if len(sharpe_li) > 1 else None
-
+    #%%
     """Maximum Drawdown (MDD)"""
     cumulative_returns = np.array(cumulative_returns)
     peak_value = np.maximum.accumulate(cumulative_returns)
@@ -74,6 +74,6 @@ def evaluate(y_trues, y_preds):
     MDD = cumulative_returns - peak_value 
     MDD /= peak_value
     MDD = abs(np.min(MDD))
-
+    #%%
     return Metrics(Return, SR, MDD)
 # %%

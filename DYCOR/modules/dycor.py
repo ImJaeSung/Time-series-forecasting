@@ -90,7 +90,7 @@ class DYCOR(nn.Module):
     
     def backtesting(self, config, train_dataset, device):
         X_backtest, y_backtest = train_dataset.gen_backtest_data(
-            config, config['start_backtest'], config['end_backtest_final'])
+            config, config['start_backtest'], config['end_backtest'])
         X_backtest = torch.tensor(X_backtest, dtype=torch.float32)
         X_backtest = X_backtest.to(device)
         #%%

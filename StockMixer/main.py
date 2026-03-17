@@ -31,7 +31,7 @@ except:
     subprocess.run(["wandb", "login"], input=key[0], encoding='utf-8')
     import wandb
 
-project = "StockMixer" # put your WANDB project name
+project = "Baselines_Stock" # put your WANDB project name
 # entity = "" # put your WANDB username
 
 run = wandb.init(
