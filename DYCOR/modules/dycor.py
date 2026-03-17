@@ -101,21 +101,23 @@ class DYCOR(nn.Module):
             )
         ) # (T, N)
         #%%
-        for i in range(0, len(X_backtest), config['batch_size']):
-            st = i
-            ed = i + config['batch_size']
-            
-            input = X_backtest[st:ed].squeeze(0).to(device)
-            y_pred, _ = self(input)
-            y_pred = y_pred.cpu().detach().numpy()
-            y_preds[st:ed] = y_pred.reshape(1, -1)
+        self.eval()
+        with torch.no_grad():
+            for i in range(0, len(X_backtest), config['batch_size']):
+                st = i
+                ed = i + config['batch_size']
+                
+                input = X_backtest[st:ed].squeeze(0).to(device)
+                y_pred, _ = self(input)
+                y_pred = y_pred.cpu().detach().numpy()
+                y_preds[st:ed] = y_pred.reshape(1, -1)
 
-        y_preds = pd.DataFrame(
-            y_preds, 
-            columns=y_backtest.keys(), 
-            index=y_backtest[
-                list(y_backtest.keys())[0]
-            ].index
-        )
+            y_preds = pd.DataFrame(
+                y_preds, 
+                columns=y_backtest.keys(), 
+                index=y_backtest[
+                    list(y_backtest.keys())[0]
+                ].index
+            )
         
         return y_backtest, y_preds

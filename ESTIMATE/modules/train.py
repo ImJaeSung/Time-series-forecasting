@@ -1,5 +1,4 @@
 #%%
-import os
 import copy
 
 import pandas as pd
@@ -9,52 +8,39 @@ import wandb
 
 import torch
 from torch import nn
-import torch.nn.functional as F
 
 from evaluation.evaluation import evaluate
 #%%
 def train_function(model, train_dataloader, test_dataloader, config, optimizer, phase, device):
-    
+    #%%    
     best_acc = -9999
+    #%%
     for epoch in range(config['epochs']):
         #%%
         logs = {
-            f'loss (Phase {phase})': [],
-            f'huber (Phase {phase})': [], 
-            f'corr (Phase {phase})': [],
-            f'valid_loss (Phase {phase})': [],
-            f'valid_huber (Phase {phase})': [], 
-            f'valid_corr (Phase {phase})': [],
+            f'loss_mse (Phase {phase})': [],
+            f'loss_rmse (Phase {phase})': [], 
+            f'valid_loss_mse (Phase {phase})': [],
+            f'valid_loss_rmse (Phase {phase})': [], 
         }
         model.train()
         #%%
         for _, (X_batch, y_batch) in tqdm(enumerate(train_dataloader), desc='(Train) inner loop...'):
             #%%
-            X_batch, y_batch = X_batch.to(device), y_batch.to(device) # (B, S, T, P), (B, S)
-            prediction, clustering_info = model(X_batch.squeeze(0)) # (S, 1)
-            prediction = prediction.reshape(1, -1)
-        
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device) # (B, S, T, P), (B, S)        
+            prediction = model(X_batch)[:,:,-1] # (B, S)
+            
             assert prediction.shape == y_batch.shape
             
             optimizer.zero_grad()
             
             loss_ = []
             
-            """1. huber loss"""
-            huber = nn.HuberLoss(delta=1.0)(prediction, y_batch)
-            loss_.append((f'huber (Phase {phase})', huber))
-            
-            """2. correlation-aware loss"""
-            pred_normalized = (prediction - torch.mean(prediction)) 
-            pred_normalized /= torch.std(prediction) + 1e-8
-            y_batch_normalized = (y_batch - torch.mean(y_batch)) 
-            y_batch_normalized /= torch.std(y_batch) + 1e-8
-            
-            corr = torch.mean(pred_normalized * y_batch_normalized)
-            loss_.append((f'corr (Phase {phase})', 1 - corr))
-            #%%
-            loss = (1 - config['corr_weight']) * huber + config['corr_weight'] * (1 - corr)
-            loss_.append((f'loss (Phase {phase})', loss))
+            """loss: RMSE"""
+            mse = nn.MSELoss()(prediction, y_batch)
+            loss = torch.sqrt(mse)
+            loss_.append((f'loss_mse (Phase {phase})', mse))
+            loss_.append((f'loss_rmse (Phase {phase})', loss))
             #%%
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
@@ -78,8 +64,7 @@ def train_function(model, train_dataloader, test_dataloader, config, optimizer, 
             for _, (X_valid, y_valid) in tqdm(enumerate(test_dataloader), desc='(Eval) inner loop...'):
                 #%%
                 X_valid, y_valid = X_valid.to(device), y_valid.to(device) # (B, S, T, P), (B, S)
-                prediction, _ = model(X_valid.squeeze(0)) # (S, 1)
-                prediction = prediction.reshape(1, -1)
+                prediction = model(X_valid)[:,:,-1] # (B, S)
                 
                 y_trues.append(y_valid.cpu().numpy())
                 y_preds.append(prediction.cpu().numpy())
@@ -89,20 +74,11 @@ def train_function(model, train_dataloader, test_dataloader, config, optimizer, 
                 valid_loss_ = []
                 #%%
                 """validation loss"""
-                valid_huber = nn.HuberLoss(delta=1.0)(prediction, y_valid)
-                valid_loss_.append((f'valid_huber (Phase {phase})', valid_huber))
-            
-                pred_normalized = (prediction - torch.mean(prediction)) 
-                pred_normalized /= torch.std(prediction) + 1e-8
-                y_valid_normalized = (y_valid - torch.mean(y_valid)) 
-                y_valid_normalized /= torch.std(y_valid) + 1e-8
-                
-                valid_corr = torch.mean(pred_normalized * y_valid_normalized)
-                valid_loss_.append((f'valid_corr (Phase {phase})', (1 - valid_corr)))
-
-                valid_loss = (1 - config['corr_weight']) * valid_huber + config['corr_weight'] * (1 - valid_corr)
-                valid_loss_.append((f'valid_loss (Phase {phase})', valid_loss))
-
+                valid_mse = nn.MSELoss()(prediction, y_valid)
+                valid_loss = torch.sqrt(valid_mse)
+                valid_loss_.append((f'valid_loss_mse (Phase {phase})', valid_mse))
+                valid_loss_.append((f'valid_loss_rmse (Phase {phase})', valid_loss))
+        
                 for x, y in valid_loss_:
                     logs[x] = logs.get(x) + [y.item()]
         #%%

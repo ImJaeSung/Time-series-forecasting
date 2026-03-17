@@ -20,40 +20,48 @@ def train_function(model, train_dataloader, test_dataloader, config, optimizer, 
         #%%
         logs = {
             f'loss (Phase {phase})': [],
-            f'huber (Phase {phase})': [], 
-            f'corr (Phase {phase})': [],
+            f'loss_mse (Phase {phase})': [],
+            f'loss_ranking (Phase {phase})': [], 
             f'valid_loss (Phase {phase})': [],
-            f'valid_huber (Phase {phase})': [], 
-            f'valid_corr (Phase {phase})': [],
+            f'valid_loss_mse (Phase {phase})': [], 
+            f'valid_loss_ranking (Phase {phase})': [],
         }
         model.train()
         #%%
         for _, (X_batch, y_batch) in tqdm(enumerate(train_dataloader), desc='(Train) inner loop...'):
             #%%
             X_batch, y_batch = X_batch.to(device), y_batch.to(device) # (B, S, T, P), (B, S)
-            prediction, clustering_info = model(X_batch.squeeze(0)) # (S, 1)
-            prediction = prediction.reshape(1, -1)
-        
+            y_batch = y_batch.T
+            prediction = model(X_batch.squeeze(0)) # (S, 1)
+            # prediction = prediction.reshape(1, -1)
+            #%%
             assert prediction.shape == y_batch.shape
             
             optimizer.zero_grad()
             
             loss_ = []
             
-            """1. huber loss"""
-            huber = nn.HuberLoss(delta=1.0)(prediction, y_batch)
-            loss_.append((f'huber (Phase {phase})', huber))
+            """1. MSE loss"""
+            mse = nn.MSELoss()(prediction, y_batch)
+            loss_.append((f'loss_mse (Phase {phase})', mse))
             
-            """2. correlation-aware loss"""
-            pred_normalized = (prediction - torch.mean(prediction)) 
-            pred_normalized /= torch.std(prediction) + 1e-8
-            y_batch_normalized = (y_batch - torch.mean(y_batch)) 
-            y_batch_normalized /= torch.std(y_batch) + 1e-8
+            """2. Ranking-aware loss"""
+            all_one = torch.ones(config['batch_size'], 1, dtype=torch.float32).to(device)
+            pre_pw_dif = torch.sub(
+                prediction @ all_one.t(),
+                all_one @ prediction.t()
+            )
+            gt_pw_dif = torch.sub(
+                all_one @ y_batch.t(),
+                y_batch @ all_one.t()
+            )
+            rank_loss = torch.mean(
+                F.relu(pre_pw_dif * gt_pw_dif)
+            )
             
-            corr = torch.mean(pred_normalized * y_batch_normalized)
-            loss_.append((f'corr (Phase {phase})', 1 - corr))
+            loss_.append((f'loss_ranking (Phase {phase})', rank_loss))
             #%%
-            loss = (1 - config['corr_weight']) * huber + config['corr_weight'] * (1 - corr)
+            loss = mse + config['alpha'] * rank_loss
             loss_.append((f'loss (Phase {phase})', loss))
             #%%
             loss.backward()
@@ -78,29 +86,36 @@ def train_function(model, train_dataloader, test_dataloader, config, optimizer, 
             for _, (X_valid, y_valid) in tqdm(enumerate(test_dataloader), desc='(Eval) inner loop...'):
                 #%%
                 X_valid, y_valid = X_valid.to(device), y_valid.to(device) # (B, S, T, P), (B, S)
-                prediction, _ = model(X_valid.squeeze(0)) # (S, 1)
-                prediction = prediction.reshape(1, -1)
+                y_valid = y_valid.T
+                prediction = model(X_valid.squeeze(0)) # (S, 1)
                 
-                y_trues.append(y_valid.cpu().numpy())
-                y_preds.append(prediction.cpu().numpy())
+                y_trues.append(y_valid.T.cpu().numpy())
+                y_preds.append(prediction.reshape(1, -1).cpu().numpy())
                 
                 assert y_valid.shape == prediction.shape
                 
                 valid_loss_ = []
                 #%%
                 """validation loss"""
-                valid_huber = nn.HuberLoss(delta=1.0)(prediction, y_valid)
-                valid_loss_.append((f'valid_huber (Phase {phase})', valid_huber))
-            
-                pred_normalized = (prediction - torch.mean(prediction)) 
-                pred_normalized /= torch.std(prediction) + 1e-8
-                y_valid_normalized = (y_valid - torch.mean(y_valid)) 
-                y_valid_normalized /= torch.std(y_valid) + 1e-8
+                valid_mse = nn.MSELoss()(prediction, y_valid)
+                valid_loss_.append((f'valid_loss_mse (Phase {phase})', valid_mse))
                 
-                valid_corr = torch.mean(pred_normalized * y_valid_normalized)
-                valid_loss_.append((f'valid_corr (Phase {phase})', (1 - valid_corr)))
-
-                valid_loss = (1 - config['corr_weight']) * valid_huber + config['corr_weight'] * (1 - valid_corr)
+                all_one = torch.ones(config['batch_size'], 1, dtype=torch.float32).to(device)
+                pre_pw_dif = torch.sub(
+                    prediction @ all_one.t(),
+                    all_one @ prediction.t()
+                )
+                gt_pw_dif = torch.sub(
+                    all_one @ y_batch.t(),
+                    y_batch @ all_one.t()
+                )
+                valid_rank_loss = torch.mean(
+                    F.relu(pre_pw_dif * gt_pw_dif)
+                )
+                
+                valid_loss_.append((f'valid_loss_ranking (Phase {phase})', valid_rank_loss))
+                #%%
+                valid_loss = valid_mse + config['alpha'] * valid_rank_loss
                 valid_loss_.append((f'valid_loss (Phase {phase})', valid_loss))
 
                 for x, y in valid_loss_:

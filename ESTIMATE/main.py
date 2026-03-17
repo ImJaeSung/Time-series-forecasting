@@ -17,7 +17,6 @@ from modules.utility import (
     add_month, 
     add_month_to_string_time
 )
-
 #%%
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,7 +31,7 @@ except:
     subprocess.run(["wandb", "login"], input=key[0], encoding='utf-8')
     import wandb
 
-project = "DYCOR" # put your WANDB project name
+project = "Estimate" # put your WANDB project name
 # entity = "" # put your WANDB username
 
 run = wandb.init(
@@ -42,48 +41,41 @@ run = wandb.init(
 )
 #%%
 def get_args(debug):
-    parser = argparse.ArgumentParser(description='DYCOR: Dynamic Correlation for Stock Trend Prediction')
-    parser.add_argument('--model', type=str, default='DYCOR')
+    parser = argparse.ArgumentParser(description='Estimate-parameters')
+    parser.add_argument('--model', type=str, default='Estimate')
     parser.add_argument('--market', type=str, default='SP500',
                         choices=['NASDAQ', 'NYSE', 'SP500'],
                         help='Market to train on (default: NASDAQ)')
     parser.add_argument('--seed', type=int, default=0, 
                         help='Random seed (default: based on current time)')
-    parser.add_argument('--gpu', type=int, default=0, 
-                        help='GPU device ID (default: 0)')
     
     parser.add_argument('--lookback_length', type=int, default=32, 
                         help='lookback window length')
-    parser.add_argument('--fea_num', type=int, default=17, 
-                        help='')
-    parser.add_argument('--hidden_dim', type=int, default=80, 
-                        help='hidden layer dimension')
+    parser.add_argument('--dropout', type=int, default=0.4, 
+                        help='dropout')
     
-    parser.add_argument('--min_var_ratio', type=float, default=0.93, 
-                        help='minimum variance ratio')
-    
-    parser.add_argument('--temperature', type=float, default=0.1, 
-                        help='temperature parameter')
-    parser.add_argument('--dropout_prob', type=float, default=0.3, 
-                        help='dropout probability')
+    parser.add_argument('--num_features', type=float, default=17, 
+                        help='the number of features')
+    parser.add_argument('--num_heads', type=float, default=4, 
+                        help='the number of attention heads')
+    parser.add_argument("--rnn_units", type=int, default=16, 
+                        help="the number of RNN units")
+    parser.add_argument('--hidden_dim', type=int, default=32, 
+                        help='hidden dimension')
+    parser.add_argument('--mlp_hidden', type=int, default=16, 
+                        help='hidden dimension')
+
     parser.add_argument('--learning_rate', type=float, default=0.0001, 
-                        help='learning rate DYCOR')
+                        help='learning rate')
+    parser.add_argument('--weight_decay', type=float, default=0.005, 
+                        help='weight decay')
     parser.add_argument('--steps', type=int, default=1, 
                         help='')
-    parser.add_argument('--epochs', type=int, default=100, 
+    parser.add_argument('--epochs', type=int, default=1, 
                         help='training epochs')
-    
-    parser.add_argument('--corr_weight', type=float, default=0.65, 
-                        help='correlation based loss weight')
     parser.add_argument('--batch_size', type=int, default=1, 
                         help='batch size')
-    parser.add_argument('--patience', type=int, default=50, 
-                        help='early stopping patience')
-    parser.add_argument('--warmup_epochs', type=int, default=10, 
-                        help='warmup epochs')
     
-    parser.add_argument('--phase', type=int, default=10, 
-                        help='the number of total phase')
     if debug:
         return parser.parse_args(args=[])
     else:
@@ -94,7 +86,7 @@ def main():
     config = vars(get_args(debug=False)) # default configuration
     config_module = importlib.import_module('datasets.config')
     importlib.reload(config_module)
-    config |= config_module.get_config(config['market'])
+    config = {**config, **config_module.get_config(config['market'])}
     #%%
     set_random_seed(config['seed'])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -135,11 +127,18 @@ def main():
             test_dataset, batch_size=config['batch_size'], shuffle=False)
         #%%
         """model"""
-        model_module = importlib.import_module('modules.dycor')
+        model_module = importlib.import_module('modules.model')
         importlib.reload(model_module)
-        model = getattr(model_module, "DYCOR")(config).to(device)
+        model = getattr(model_module, "Estimate")(
+            config, 
+            train_dataset
+        ).to(device)
         #%%
-        optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
+        optimizer = optim.Adam(
+            model.parameters(),
+            lr=config['learning_rate'], 
+            weight_decay=config['weight_decay']
+        )
         #%%
         """the number of parameters"""
         count_parameters = lambda model: sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -160,7 +159,7 @@ def main():
         )
         #%%
         """save the model (each phase)"""
-        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['hidden_dim']}"
+        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['hidden_dim']}_{config['rnn_units']}"
         model_dir = f"./assets/models/{base_name}/"
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
@@ -176,7 +175,7 @@ def main():
         artifact.add_file('./main.py')
         artifact.add_file(f'./datasets/sp500_dataset.py')
         artifact.add_file('./modules/train.py')
-        artifact.add_file('./modules/dycor.py')
+        artifact.add_file('./modules/model.py')
         wandb.log_artifact(artifact)
         #%%
         """backtesting"""

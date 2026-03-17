@@ -17,7 +17,6 @@ from modules.utility import (
     add_month, 
     add_month_to_string_time
 )
-
 #%%
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,7 +31,7 @@ except:
     subprocess.run(["wandb", "login"], input=key[0], encoding='utf-8')
     import wandb
 
-project = "DYCOR" # put your WANDB project name
+project = "StockMixer" # put your WANDB project name
 # entity = "" # put your WANDB username
 
 run = wandb.init(
@@ -42,8 +41,8 @@ run = wandb.init(
 )
 #%%
 def get_args(debug):
-    parser = argparse.ArgumentParser(description='DYCOR: Dynamic Correlation for Stock Trend Prediction')
-    parser.add_argument('--model', type=str, default='DYCOR')
+    parser = argparse.ArgumentParser(description='model parameter')
+    parser.add_argument('--model', type=str, default='StockMixer')
     parser.add_argument('--market', type=str, default='SP500',
                         choices=['NASDAQ', 'NYSE', 'SP500'],
                         help='Market to train on (default: NASDAQ)')
@@ -56,34 +55,22 @@ def get_args(debug):
                         help='lookback window length')
     parser.add_argument('--fea_num', type=int, default=17, 
                         help='')
-    parser.add_argument('--hidden_dim', type=int, default=80, 
+    parser.add_argument('--market_num', type=int, default=20, 
                         help='hidden layer dimension')
     
-    parser.add_argument('--min_var_ratio', type=float, default=0.93, 
-                        help='minimum variance ratio')
-    
-    parser.add_argument('--temperature', type=float, default=0.1, 
-                        help='temperature parameter')
-    parser.add_argument('--dropout_prob', type=float, default=0.3, 
-                        help='dropout probability')
-    parser.add_argument('--learning_rate', type=float, default=0.0001, 
+    parser.add_argument('--learning_rate', type=float, default=0.001, 
                         help='learning rate DYCOR')
     parser.add_argument('--steps', type=int, default=1, 
+                        help='')
+    parser.add_argument('--scale_factor', type=int, default=16, 
                         help='')
     parser.add_argument('--epochs', type=int, default=100, 
                         help='training epochs')
     
-    parser.add_argument('--corr_weight', type=float, default=0.65, 
-                        help='correlation based loss weight')
+    parser.add_argument('--alpha', type=float, default=0.1, 
+                        help='alpha')
     parser.add_argument('--batch_size', type=int, default=1, 
                         help='batch size')
-    parser.add_argument('--patience', type=int, default=50, 
-                        help='early stopping patience')
-    parser.add_argument('--warmup_epochs', type=int, default=10, 
-                        help='warmup epochs')
-    
-    parser.add_argument('--phase', type=int, default=10, 
-                        help='the number of total phase')
     if debug:
         return parser.parse_args(args=[])
     else:
@@ -135,9 +122,9 @@ def main():
             test_dataset, batch_size=config['batch_size'], shuffle=False)
         #%%
         """model"""
-        model_module = importlib.import_module('modules.dycor')
+        model_module = importlib.import_module('modules.model')
         importlib.reload(model_module)
-        model = getattr(model_module, "DYCOR")(config).to(device)
+        model = getattr(model_module, "StockMixer")(config).to(device)
         #%%
         optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
         #%%
@@ -160,7 +147,7 @@ def main():
         )
         #%%
         """save the model (each phase)"""
-        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['hidden_dim']}"
+        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['market_num']}"
         model_dir = f"./assets/models/{base_name}/"
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
@@ -176,7 +163,7 @@ def main():
         artifact.add_file('./main.py')
         artifact.add_file(f'./datasets/sp500_dataset.py')
         artifact.add_file('./modules/train.py')
-        artifact.add_file('./modules/dycor.py')
+        artifact.add_file('./modules/model.py')
         wandb.log_artifact(artifact)
         #%%
         """backtesting"""
@@ -189,7 +176,7 @@ def main():
             print(f"{x} (Phase {phase}): {y:.3f}")
             wandb.log({f"{x} (Phase {phase})": y})
         #%%
-        backtest_results = pd.DataFrame([backtest_results], index=[f"Phase_{phase}"]).T
+        backtest_results = pd.DataFrame([backtest_results._asdict()], index=[f"Phase_{phase}"]).T
         results = pd.concat([pred_results, backtest_results], axis=0)
         all_phase_results.append(results)
         #%%

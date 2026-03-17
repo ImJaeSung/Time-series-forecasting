@@ -1,12 +1,17 @@
 #%%
+import pickle
 from tqdm import tqdm
 import os
 import pandas as pd
 import numpy as np
 
+from scipy import sparse
+
 import torch
+from torch_geometric import utils
 from torch.utils.data import Dataset
 import datasets.indicator as indi
+from datasets.snapshot import  HypergraphSnapshots
 #%%
 class StockDataset(Dataset):
     def __init__(self, config, train=True):
@@ -29,25 +34,38 @@ class StockDataset(Dataset):
             data = np.load(dataset_name + ".npz")
             self.X = torch.tensor(data["X"], dtype=torch.float32)
             self.y = torch.tensor(data["y"], dtype=torch.float32)
+            self.edges = torch.LongTensor(data["edges"])
             self.buy_prob_threshold = data["buy_prob_threshold"]
             self.sell_prob_threshold = data["sell_prob_threshold"]
+            
+            with open(dataset_name + "_hypergraph.pkl", "rb") as f:
+                hypergraphsnapshot = pickle.load(f)
         
+            self.hypergraphsnapshot = hypergraphsnapshot
+            
         except Exception as e:
             print(e)
-            X_train_full, y_train_full, X_test_full, y_test_full, buy_prob_threshold, sell_prob_threshold = self.split_train_test(config)
+            X_train_full, y_train_full, X_test_full, y_test_full, hypergraphsnapshot, edges, buy_prob_threshold, sell_prob_threshold = self.split_train_test(config)
             
             self.X = X_train_full if train else X_test_full
             self.y = y_train_full[:, :, -1] if train else y_test_full[:, :, -1]
+            self.hypergraphsnapshot = hypergraphsnapshot
+            self.edges = torch.LongTensor(edges)
             self.buy_prob_threshold = buy_prob_threshold
             self.sell_prob_threshold = sell_prob_threshold
-            
+
+
             np.savez(
                 dataset_name, 
                 X=self.X, 
                 y=self.y, 
+                edges=edges,
                 buy_prob_threshold=buy_prob_threshold,
                 sell_prob_threshold=sell_prob_threshold
             )
+            
+            with open(dataset_name + "_hypergraph.pkl", "wb") as f:
+                pickle.dump(hypergraphsnapshot, f)
     #%%
     def split_train_test(self, config):
         train_data_storage = {}
@@ -155,8 +173,43 @@ class StockDataset(Dataset):
         y_train = torch.tensor(y_train, dtype=torch.float32)
         X_test = torch.tensor(X_test, dtype=torch.float32)
         y_test = torch.tensor(y_test, dtype=torch.float32)
+        #%%
+        """hypergraph"""
+        stock_list = pd.read_csv("data/sp500_ticker.csv", index_col="Symbol")
+        cat_list = stock_list.loc[self.sp500_tickers()]["Sector"].unique()
+        cat_dict = {}
+        for i in range(len(cat_list)):
+            cat = cat_list[i]
+            cat_dict[cat] = i
+            
+        incidence_matrix = np.zeros(
+            (len(self.sp500_tickers()), len(cat_list))
+        )
+        
+        for i in tqdm(range(len(self.sp500_tickers())), desc='Generating Incidence matrix...'):
+            cat_key = stock_list.loc[self.sp500_tickers()[i]].Sector    
+            cat_index = cat_dict[cat_key]
+            incidence_matrix[i][cat_index] = 1
+            
+        inci_sparse = sparse.coo_matrix(incidence_matrix)
+        incidence_edges = utils.from_scipy_sparse_matrix(inci_sparse)
+        hypergraphsnapshot = HypergraphSnapshots(
+            self.sp500_tickers(), 
+            config['start_train'], 
+            train_data_storage, 
+            use_cuda=True
+        )
 
-        return X_train, y_train, X_test, y_test, buy_prob_threshold, sell_prob_threshold
+        return (
+            X_train, 
+            y_train, 
+            X_test, 
+            y_test, 
+            hypergraphsnapshot.hypergraph_snapshot,
+            incidence_edges[0],
+            buy_prob_threshold, 
+            sell_prob_threshold
+        )
     #%%
     def get_data_baseline(self, symbol, start_date, end_date, lookback=0, lookforward=0):
         #%%

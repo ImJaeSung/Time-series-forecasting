@@ -176,5 +176,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-
+data/
+assets/
+results/
 wandb/

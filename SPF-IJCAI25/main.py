@@ -32,7 +32,7 @@ except:
     subprocess.run(["wandb", "login"], input=key[0], encoding='utf-8')
     import wandb
 
-project = "DYCOR" # put your WANDB project name
+project = "spf-ijcai" # put your WANDB project name
 # entity = "" # put your WANDB username
 
 run = wandb.init(
@@ -42,8 +42,8 @@ run = wandb.init(
 )
 #%%
 def get_args(debug):
-    parser = argparse.ArgumentParser(description='DYCOR: Dynamic Correlation for Stock Trend Prediction')
-    parser.add_argument('--model', type=str, default='DYCOR')
+    parser = argparse.ArgumentParser(description='spf-ijcai2025')
+    parser.add_argument('--model', type=str, default='spf-ijcai2025')
     parser.add_argument('--market', type=str, default='SP500',
                         choices=['NASDAQ', 'NYSE', 'SP500'],
                         help='Market to train on (default: NASDAQ)')
@@ -54,29 +54,37 @@ def get_args(debug):
     
     parser.add_argument('--lookback_length', type=int, default=32, 
                         help='lookback window length')
-    parser.add_argument('--fea_num', type=int, default=17, 
+    parser.add_argument('--d_model', type=int, default=32, 
                         help='')
-    parser.add_argument('--hidden_dim', type=int, default=80, 
-                        help='hidden layer dimension')
+    parser.add_argument('--dropout', type=int, default=0.1, 
+                        help='dropout')
     
-    parser.add_argument('--min_var_ratio', type=float, default=0.93, 
-                        help='minimum variance ratio')
-    
-    parser.add_argument('--temperature', type=float, default=0.1, 
-                        help='temperature parameter')
-    parser.add_argument('--dropout_prob', type=float, default=0.3, 
-                        help='dropout probability')
+    parser.add_argument('--num_features', type=float, default=17, 
+                        help='the number of features')
+    parser.add_argument('--num_heads', type=float, default=4, 
+                        help='the number of attention heads')
+    parser.add_argument('--num_stocks', type=float, default=463, 
+                        help='the number of stocks in datasets')
+    parser.add_argument('--sequence_len', type=float, default=20, 
+                        help='sequence length')
+    parser.add_argument("--num_edges", type=int, default=64, 
+                        help="num_edges")
+
+    parser.add_argument('--fusion_mode', type=str, default="sum", 
+                        help="""
+                        fusion mode
+                        options: sum, cat, adaptive
+                        """)
+  
     parser.add_argument('--learning_rate', type=float, default=0.0001, 
                         help='learning rate DYCOR')
     parser.add_argument('--steps', type=int, default=1, 
                         help='')
-    parser.add_argument('--epochs', type=int, default=100, 
+    parser.add_argument('--epochs', type=int, default=300, 
                         help='training epochs')
-    
-    parser.add_argument('--corr_weight', type=float, default=0.65, 
-                        help='correlation based loss weight')
     parser.add_argument('--batch_size', type=int, default=1, 
                         help='batch size')
+    
     parser.add_argument('--patience', type=int, default=50, 
                         help='early stopping patience')
     parser.add_argument('--warmup_epochs', type=int, default=10, 
@@ -94,7 +102,7 @@ def main():
     config = vars(get_args(debug=False)) # default configuration
     config_module = importlib.import_module('datasets.config')
     importlib.reload(config_module)
-    config |= config_module.get_config(config['market'])
+    config = {**config, **config_module.get_config(config['market'])}
     #%%
     set_random_seed(config['seed'])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -135,9 +143,12 @@ def main():
             test_dataset, batch_size=config['batch_size'], shuffle=False)
         #%%
         """model"""
-        model_module = importlib.import_module('modules.dycor')
+        model_module = importlib.import_module('modules.model')
         importlib.reload(model_module)
-        model = getattr(model_module, "DYCOR")(config).to(device)
+        model = getattr(model_module, "Model")(
+            config, 
+            train_dataset.hypergraphsnapshot
+        ).to(device)
         #%%
         optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
         #%%
@@ -160,7 +171,7 @@ def main():
         )
         #%%
         """save the model (each phase)"""
-        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['hidden_dim']}"
+        base_name = f"{config['model']}_{config['market']}_Phase_{phase}_{config['lookback_length']}_{config['d_model']}"
         model_dir = f"./assets/models/{base_name}/"
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
@@ -176,7 +187,7 @@ def main():
         artifact.add_file('./main.py')
         artifact.add_file(f'./datasets/sp500_dataset.py')
         artifact.add_file('./modules/train.py')
-        artifact.add_file('./modules/dycor.py')
+        artifact.add_file('./modules/model.py')
         wandb.log_artifact(artifact)
         #%%
         """backtesting"""
