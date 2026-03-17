@@ -8,7 +8,7 @@ __pycache__/
 *.npz
 *.safetensors
 *.sh
-
+.DS_Store
 # C extensions
 *.so
 

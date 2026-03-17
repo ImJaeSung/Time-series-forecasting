@@ -19,10 +19,6 @@ DATASET_CONFIGS = {
     'SP500': {
         'stock_num': 463,
         'n_subclusters': 4,
-        'valid_index': 3775,
-        'test_index': 4278,
-        'data_path': '../data/SP500.pkl',
-        # 'history_window': 32,
         'indicators': {
             'close_sma': {
                 'medium_period': 10,
