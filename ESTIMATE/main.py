@@ -71,7 +71,7 @@ def get_args(debug):
                         help='weight decay')
     parser.add_argument('--steps', type=int, default=1, 
                         help='')
-    parser.add_argument('--epochs', type=int, default=1, 
+    parser.add_argument('--epochs', type=int, default=100, 
                         help='training epochs')
     parser.add_argument('--batch_size', type=int, default=1, 
                         help='batch size')

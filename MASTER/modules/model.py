@@ -3,6 +3,9 @@ Reference:
 [1] https://github.com/SJTU-DMTai/MASTER/blob/master/master.py
 """
 #%%
+import pandas as pd
+import numpy as np
+
 import torch
 from torch import nn
 
@@ -86,10 +89,10 @@ class MASTER(nn.Module):
                 st = i
                 ed = i + config['batch_size']
                 
-                input = X_backtest[st:ed].to(device)
-                y_pred = self(input)[:,:,-1]
+                input = X_backtest[st:ed].to(device) # (B, S, T, P)
+                y_pred = self(input.squeeze(0)) # (S, 1)
                 y_pred = y_pred.cpu().detach().numpy()
-                y_preds[st:ed] = y_pred
+                y_preds[st:ed] = y_pred.T
 
             y_preds = pd.DataFrame(
                 y_preds, 
